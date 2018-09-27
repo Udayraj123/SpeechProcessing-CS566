@@ -271,7 +271,7 @@ int main(int argc, char const *argv[]) {
 	for (int vowelIdx = 0; vowelIdx < 5; ++vowelIdx)
 	{
 		filename.str(std::string());
-		filename << "coeffs/cis_"<<VOWELS[vowelIdx]<<".txt";			
+		filename << CURR_DIR << "coeffs/cis_"<<VOWELS[vowelIdx]<<".txt";			
 		vowelWiseFrameCis[vowelIdx] = loadFrameWiseCis(filename.str());
 	}
 	

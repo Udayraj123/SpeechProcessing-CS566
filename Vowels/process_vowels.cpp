@@ -107,25 +107,35 @@ void saveCis(string filename, vector<vector<double> > &allCis, bool verbose=fals
 	int n=allCis.size(),p=allCis[0].size();
 	ofstream OUTPUT_FS(filename, std::ios_base::app);
 	for (int i = 0; i < n; ++i) {
+		// skip first
+		// for (int j = 1; j < p; ++j) 
 		for (int j = 0; j < p; ++j) 
 			OUTPUT_FS << allCis[i][j] << "\t";
 		OUTPUT_FS << endl;
 	}
 	OUTPUT_FS << endl;
 	OUTPUT_FS.close();
-	if (verbose)cout << "Appened to file: " << filename << endl;
+	if (verbose)cout << "Appended to file: " << filename << endl;
 }
 
 
 #define FIXED_FLOAT(x) std::fixed <<std::setprecision(6)<<(x) 
 int main(int argc, char const *argv[]) {
 	char VOWELS[5] = { 'a','e','i','o','u' };
+	std::ostringstream filename;
+	//clear the stream
+	filename.str(std::string());
+	if(SAVE_INTO_UNIVERSE){
+		filename << CURR_DIR << "coeffs/universe.txt";
+		//clear the file
+		ofstream OUTPUT_FS(filename.str()); OUTPUT_FS.close();
+	}
 	for (int vowelIdx = 0; vowelIdx < 5; ++vowelIdx)
 	{
 		char TRAIN_VOWEL = VOWELS[vowelIdx];
-		std::ostringstream filename;
 		filename.str(std::string());
 		filename << CURR_DIR<< INPUT_FOLDER <<TRAIN_VOWEL<<".txt";
+		// filename << CURR_DIR<< INPUT_FOLDER <<TRAIN_VOWEL<<"_2.txt";
 		ifstream INPUT_FS;
 		INPUT_FS.open(filename.str());
 
@@ -235,12 +245,15 @@ int main(int argc, char const *argv[]) {
 			return 0;
 		}
 		cout << "Total duration: " << FIXED_FLOAT(N_SAMPLES / SAMPLERATE) << "s (" << N_SAMPLES << " samples)" << endl;
-
-		// For each clip perform the calculations
+		//clear the stream
 		filename.str(std::string());
-		filename << "coeffs/cis_"<<TRAIN_VOWEL<<".txt";			
-		//clear the file
-		ofstream OUTPUT_FS(filename.str()); OUTPUT_FS.close();
+		if(SAVE_INTO_UNIVERSE)
+			filename << CURR_DIR << "coeffs/universe.txt";
+		else{			
+			// indiv cis clear the file
+			filename << CURR_DIR << "coeffs/cis_"<< TRAIN_VOWEL <<".txt";
+			ofstream OUTPUT_FS(filename.str()); OUTPUT_FS.close();
+		}
 
 		for (int i = 0; i < NUM_CLIPS; ++i) {
 			clip_size = (clips[i].second - clips[i].first);
@@ -295,7 +308,7 @@ int main(int argc, char const *argv[]) {
 			for (int i = 0; i < NUM_CLIPS; ++i) {
 				// clear the stream;
 				filename.str(std::string());
-				filename << "output_clips/150101021_"<<TRAIN_VOWEL<<"_"<<i<<".txt";			
+				filename << CURR_DIR << "output_clips/150101021_"<<TRAIN_VOWEL<<"_"<<i<<".txt";			
 				//write cropped sample into new file		
 				writeSample(filename.str(),samples,clips[i].first,clips[i].second);
 			}
