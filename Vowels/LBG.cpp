@@ -2,6 +2,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <map>
 #include <fstream>
 #include <sstream> // for i in filename
 #include <iomanip> // for setprecision
@@ -82,7 +83,7 @@ vector< vector<double> >  loadCis(ifstream &INPUT_FS){
 	// cout<<filename<<endl;
 	return allCis;
 }
-double rangeFloatRand(double &a, double &b){
+double rangeFloatRand(double a, double b){
 	double diff = b-a;
 	// RAND_MAX defined in cstdlib header
 	return a + diff*rand()/RAND_MAX; 
@@ -115,7 +116,7 @@ void updateMeansRemove(vector<double> &item, vector<double> &means, double &clus
 	}
 }
 
-vector<vector<double> > LBG(const int K,int iterations, vector< vector<double> >	&universe, double DISTORTION_EPSILON=0.30){
+vector<vector<double> > LBG(const int K,int iterations, vector< vector<double> >	&universe, double DISTORTION_EPSILON=0.70){
 	int N = universe.size(), cols=universe[0].size();
 	assert(cols==P_ORDER);
 	vector<double> mean_vec(cols,0);
@@ -136,8 +137,9 @@ vector<vector<double> > LBG(const int K,int iterations, vector< vector<double> >
 			sum_dev += (universe[i][j]-col_averages[j])*(universe[i][j]-col_averages[j]);
 		}		
 		// std deviation / 1000
-		split_epsilon[j] = sqrt(sum_dev/N)/1000;
+		split_epsilon[j] =  sqrt(sum_dev/N)/1000;
 		// split_epsilon[j] = sqrt(sum_dev/N)/100;
+		// split_epsilon[j] = rangeFloatRand(0.001,0.002);s
 	}
 	// DEBUGV(split_epsilon)
 
@@ -160,26 +162,64 @@ vector<vector<double> > LBG(const int K,int iterations, vector< vector<double> >
 		}
 		// double the size
 		means.insert(means.end(),nextMeans.begin(),nextMeans.end());
-		// use as a sum
+		
+		bool nochange;
+		int iter = iterations, newlabel;
 		vector<vector<double> > nextColSums(means.size(),std::vector<double>(cols,0));
-		for (int i = 0; i < N; ++i)
+		std::vector<bool> is_empty(means.size());
+		do
 		{
-			// get distance from original means of current iteration
-			labels[i] = getLabel(universe[i],means);
-			for (int j = 0; j < cols; ++j)
-			{
-				nextColSums[labels[i]][j] += universe[i][j];
+			for (int i = 0; i < means.size(); ++i){
+				is_empty[i]=true;
+				for (int j = 0; j < cols; ++j){
+					nextColSums[i][j]=0;
+				}
 			}
-		}
+			nochange=true;
+			for (int i = 0; i < N; ++i)
+			{
+				newlabel = getLabel(universe[i],means);
+				nochange = nochange && labels[i]==newlabel;
+				is_empty[newlabel] = false;
+				labels[i] = newlabel;
+				for (int j = 0; j < cols; ++j)
+				{
+					// use as a sum
+					nextColSums[labels[i]][j] += universe[i][j];
+				}
+			}
 
 		// update to new col wise averages for each centroid
-		for (int i = 0; i < nextColSums.size(); ++i){
-			for (int j = 0; j < cols; ++j){
-				means[i][j]= nextColSums[i][j]/N;
+			for (int i = 0; i < means.size(); ++i){
+				for (int j = 0; j < cols; ++j){
+					means[i][j]= nextColSums[i][j]/N;
+				}
 			}
-		}
-		if(getDistortion(means,labels,universe) < DISTORTION_EPSILON)
-			break;
+			//Deal with Empty cell problem
+			// vector<vector<double> > newMeans;
+			// map<int,int>labelMap;
+			// int counter=0;
+			// for (int i = 0; i < means.size(); ++i){
+			// 	if(!is_empty[i]){
+			// 		newMeans.push_back(means[i]);								
+			// 		labelMap[i]=counter++;
+			// 	}
+			// }
+			// swap(means,newMeans);			
+			// // for(auto k : labelMap){
+			// // 	cout<< k.first <<" : "<<k.second<<", ";
+			// // }
+			// // cout<< endl;
+
+			// // Shift label numbers when empty cell is removed
+			// for (int i = 0; i < N; ++i) {
+			// 	assert(labelMap.find(labels[i])!=labelMap.end());
+			// 	labels[i]=labelMap[labels[i]];
+			// }
+			
+			if(nochange)break;
+		}while(0<--iter && getDistortion(means,labels,universe) > DISTORTION_EPSILON);
+		// cout<<getDistortion(means,labels,universe)<<endl;
 	}
 
 	for (int i = 0; i < CODEBOOK_SIZE; ++i) {
