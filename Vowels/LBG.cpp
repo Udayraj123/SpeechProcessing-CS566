@@ -18,17 +18,13 @@ using namespace std;
 #else
 #define DEBUG_ON false
 #endif
-#define DEBUGV(x) if(1 or DEBUG_ON){cout << ">> " << #x << " : \t";for(auto _i = (x).begin();_i!=(x).end();_i++)cout<<(*_i)<<"\t";cout<<"\n";}
+#define FIXED_FLOAT(x) std::fixed <<std::setprecision(4)<<(x) 
+#define DEBUG(x) if(1 or DEBUG_ON){cout << ">> " << #x << " : \t"<<FIXED_FLOAT(x)<<endl;}
+#define DEBUGV(x) if(1 or DEBUG_ON){cout << ">> " << #x << " : \t";for(auto _i = (x).begin();_i!=(x).end();_i++)cout<<FIXED_FLOAT(*_i)<<"\t";cout<<"\n";}
 
 /*
-Applying LBG means on universe file
+Applying LBG codebook on universe file
 */
-
-void writeLines(ofstream &OUTPUT_FS, vector<string> &lines) {
-	for (int i = 0; i < lines.size(); ++i) {
-		OUTPUT_FS << lines[i];
-	}
-}
 void getLines(vector<string>& linesVec_, ifstream& inFile_)
 {
 	string line;
@@ -37,28 +33,28 @@ void getLines(vector<string>& linesVec_, ifstream& inFile_)
 		linesVec_.push_back(line);
 	}
 }
-double tokhuraDist(vector <double> cis,vector <double> cis2){
+double tokhuraDist(vector <double> &cis,vector <double> &cis2){
 	static double weights[]={1,3,7,13,19,22,25,33,42,50,56,61};
 	double d = 0 ;
-	for (int i = 1; i < cis.size(); ++i){		
+	for (int i = (cis.size()>P_ORDER); i < cis.size(); ++i){		
 		d += (cis[i]-cis2[i])*(cis[i]-cis2[i])*weights[i-1];
 	}
 	return d;
 }
-double euclideanDist(vector <double> cis,vector <double> cis2){
+double euclideanDistSq(vector <double> &cis,vector <double> &cis2){
 	double d = 0 ;
-	for (int i = 1; i < cis.size(); ++i){
+	for (int i = (cis.size()>P_ORDER); i < cis.size(); ++i){
 		d += (cis[i]-cis2[i])*(cis[i]-cis2[i]);
 	}
 	return d;
 }
 
-double getDistortion(vector< vector<double> > &means,vector<int> &labels, vector< vector<double> > &universe) {
-	double dist=0;
+double getDistortion(vector< vector<double> > &codebook,vector<int> &labels, vector< vector<double> > &universe) {
 	assert(labels.size()==universe.size());
+	double dist=0;
 	int N=universe.size();
 	for (int i = 0; i < N; ++i){
-		dist += euclideanDist(means[labels[i]],universe[i])/N;
+		dist += euclideanDistSq(codebook[labels[i]],universe[i])/N;
 	}
 	return dist;
 }
@@ -70,7 +66,8 @@ vector< vector<double> >  loadCis(ifstream &INPUT_FS){
 		vector<double>temp(P_ORDER);
 		
 		// if C[0] is there, skip it
-		INPUT_FS>>tempd;
+		if(SKIP_FIRST_CI)
+			INPUT_FS>>tempd;
 
 		for (int p = 0; p < P_ORDER; ++p){
 			// just like cin>>double_t, it will ignore newlines
@@ -88,14 +85,14 @@ double rangeFloatRand(double a, double b){
 	// RAND_MAX defined in cstdlib header
 	return a + diff*rand()/RAND_MAX; 
 }
-int getLabel(vector<double> &item, vector< vector<double> > &means){
-	int label; 
-	double dist, minDist = INT_MAX;
-	for (int i = 0; i < means.size(); ++i) {
-		// if(USE_TOKHURA)
-			// dist = tokhuraDist(means[i],item);
-		// else
-		dist = euclideanDist(means[i],item);
+int getLabel(vector<double> &item, vector< vector<double> > &codebook){
+	int label=-1; 
+	double dist, minDist = INT_MAX;//std::numeric_limits<double>::max();
+	for (int i = 0; i < codebook.size(); ++i) {
+		if(USE_TOKHURA)
+			dist = tokhuraDist(codebook[i],item);
+		else
+			dist = euclideanDistSq(codebook[i],item);
 		if(dist < minDist){
 			minDist=dist;
 			label=i;
@@ -103,138 +100,148 @@ int getLabel(vector<double> &item, vector< vector<double> > &means){
 	}
 	return label;
 }
-void updateMeansAdd(vector<double> &item, vector<double> &means, double &clusterSize){
-	// item being added to this mean
-	for (int i = 0; i < means.size(); ++i) {
-		means[i] = (means[i]*(clusterSize-1)+item[i])/clusterSize;
+
+vector<double> calcSplit(vector<double> &mean, vector<int> &labels, int label, vector< vector<double> >	&universe){
+	int N = universe.size(), cols=universe[0].size();
+	double sum_dev;
+	vector<double> split_epsilon(cols);
+	for (int j = 0; j < cols; ++j){
+		sum_dev=0;
+		for (int i = 0; i < N; ++i){
+			if(labels[i]==label)
+				sum_dev += pow(universe[i][j]-mean[j],2);
+		}		
+		// std deviation / 1000
+		split_epsilon[j] = sqrt(sum_dev/N)/1000.0;
+		// split_epsilon[j] = rangeFloatRand(0.001,0.002);
 	}
-}
-void updateMeansRemove(vector<double> &item, vector<double> &means, double &clusterSize){
-	// item being removed from this mean
-	for (int i = 0; i < means.size(); ++i) {
-		means[i] = (means[i]*(clusterSize+1)-item[i])/clusterSize;
-	}
+	return split_epsilon;
 }
 
-vector<vector<double> > LBG(const int K,int iterations, vector< vector<double> >	&universe, double DISTORTION_EPSILON=0.70){
-	int N = universe.size(), cols=universe[0].size();
+vector<vector<double> > handleEmptyCells(vector<vector<double> > &codebook, vector<double> &is_empty, vector<int> &labels){
+	//Deal with Empty cell problem
+	DEBUGV(is_empty)
+	vector<vector<double> > newMeans;
+	map<int,int>labelMap;
+	int counter=0;
+	for (int i = 0; i < codebook.size(); ++i){
+		if(!is_empty[i]){
+			newMeans.push_back(codebook[i]);								
+			labelMap[i]=counter++;
+		}
+	}
+	// for(auto k : labelMap) cout<< k.first <<" : "<<k.second<<", ";  cout<< endl;
+	// Shift label numbers when empty cell is removed
+	for (int i = 0; i < labels.size(); ++i) {
+		assert(labelMap.find(labels[i])!=labelMap.end());
+		labels[i]=labelMap[labels[i]];
+	}
+	return newMeans;
+}
+vector<vector<double> > LBG(int K,int iterations, vector< vector<double> >	&universe, double DISTORTION_EPSILON=0.1){
+	K = pow(2,ceil(log2(K)));	
+	const int N = universe.size(), cols=universe[0].size();
 	assert(cols==P_ORDER);
-	vector<double> mean_vec(cols,0);
-	vector< vector<double> > means;
-	vector<double> col_averages(cols,0),split_epsilon(cols);
-	// calc colwise min maxs
-	for (int i = 0; i < N; ++i){
-		for (int j = 0; j < cols; ++j){
+	vector<double> col_averages(cols,0);
+	vector< vector<double> > codebook;
+	
+	// calc colwise averages
+	for (int j = 0; j < cols; ++j){
+		col_averages[j]=0;
+		for (int i = 0; i < N; ++i){
 			// use as a sum
 			col_averages[j] += universe[i][j];
 		}
-	}
-	double sum_dev;
-	for (int j = 0; j < cols; ++j){
 		col_averages[j]/=N;
-		sum_dev=0;
-		for (int i = 0; i < N; ++i){
-			sum_dev += (universe[i][j]-col_averages[j])*(universe[i][j]-col_averages[j]);
-		}		
-		// std deviation / 1000
-		split_epsilon[j] =  sqrt(sum_dev/N)/1000;
-		// split_epsilon[j] = sqrt(sum_dev/N)/100;
-		// split_epsilon[j] = rangeFloatRand(0.001,0.002);s
 	}
-	// DEBUGV(split_epsilon)
-
 	// start with 1 vector = colwise mean of universe
-	means.push_back(col_averages);
-
-	vector<int> labels(N,-1);			
+	codebook.push_back(col_averages);
+	// with their label as 0
+	vector<int> labels(N,0);
+	// splitting parameter dynamically calculated			
+	vector<double> split_epsilon;
+	
+	double minDistortion=INT_MAX, currDistortion;
 	// do iterations
-	while(means.size()<K){
-		// make a copy of current means/centroids
-		vector< vector<double> > nextMeans = means;
+	while(codebook.size()<K){
+		// make a copy of current codebook/centroids
+		vector< vector<double> > nextCodebook(codebook.begin(),codebook.end());
 		// Do the splitting for every centroid 
-		for (int i = 0; i < means.size(); ++i){
+		for (int i = 0; i < codebook.size(); ++i){
+			split_epsilon = calcSplit(codebook[i],labels,i,universe);
 			for (int j = 0; j < cols; ++j){
-				nextMeans[i][j] -= split_epsilon[j];
-				means[i][j] += split_epsilon[j];
+				nextCodebook[i][j] -= split_epsilon[j];
+				codebook[i][j] += split_epsilon[j];
 			}
-			// DEBUGV(means[i])
-			// DEBUGV(nextMeans[i])
+			// DEBUGV(split_epsilon)
+			// DEBUGV(codebook[i])
+			// DEBUGV(nextCodebook[i])
 		}
 		// double the size
-		means.insert(means.end(),nextMeans.begin(),nextMeans.end());
-		
+		codebook.insert(codebook.end(),nextCodebook.begin(),nextCodebook.end());
+		DEBUG(codebook.size())
 		bool nochange;
 		int iter = iterations, newlabel;
-		vector<vector<double> > nextColSums(means.size(),std::vector<double>(cols,0));
-		std::vector<bool> is_empty(means.size());
 		do
 		{
-			for (int i = 0; i < means.size(); ++i){
-				is_empty[i]=true;
-				for (int j = 0; j < cols; ++j){
-					nextColSums[i][j]=0;
-				}
-			}
+			// std::vector<bool> is_empty(codebook.size(),1);
 			nochange=true;
 			for (int i = 0; i < N; ++i)
 			{
-				newlabel = getLabel(universe[i],means);
-				nochange = nochange && labels[i]==newlabel;
-				is_empty[newlabel] = false;
+				newlabel = getLabel(universe[i],codebook);
+				nochange = nochange && (labels[i]==newlabel);
 				labels[i] = newlabel;
-				for (int j = 0; j < cols; ++j)
-				{
-					// use as a sum
+				// is_empty[newlabel] = 0;
+			}
+			// codebook = handleEmptyCells(codebook, is_empty, labels);
+			vector<vector<double> > nextColSums(codebook.size(),std::vector<double>(cols,0));
+			vector<double> labelCount(codebook.size(),0);
+			for (int i = 0; i < N; ++i) {
+				for (int j = 0; j < cols; ++j){
 					nextColSums[labels[i]][j] += universe[i][j];
 				}
+				labelCount[labels[i]]++;
 			}
-
 		// update to new col wise averages for each centroid
-			for (int i = 0; i < means.size(); ++i){
-				for (int j = 0; j < cols; ++j){
-					means[i][j]= nextColSums[i][j]/N;
+			for (int i = 0; i < codebook.size(); ++i){
+				if(labelCount[i]==0){
+					cout<<"WARNING: Empty cell problem detected!\n";
+					continue;
 				}
-			}
-			//Deal with Empty cell problem
-			// vector<vector<double> > newMeans;
-			// map<int,int>labelMap;
-			// int counter=0;
-			// for (int i = 0; i < means.size(); ++i){
-			// 	if(!is_empty[i]){
-			// 		newMeans.push_back(means[i]);								
-			// 		labelMap[i]=counter++;
-			// 	}
-			// }
-			// swap(means,newMeans);			
-			// // for(auto k : labelMap){
-			// // 	cout<< k.first <<" : "<<k.second<<", ";
-			// // }
-			// // cout<< endl;
-
-			// // Shift label numbers when empty cell is removed
-			// for (int i = 0; i < N; ++i) {
-			// 	assert(labelMap.find(labels[i])!=labelMap.end());
-			// 	labels[i]=labelMap[labels[i]];
-			// }
+				for (int j = 0; j < cols; ++j){
+					// SUCH A BLUNDER WITH THE N!
+					// codebook[i][j]= nextColSums[i][j]/N;
+					codebook[i][j]= nextColSums[i][j]/labelCount[i];
+				}
+			}						
+			currDistortion = getDistortion(codebook,labels,universe);
+			minDistortion = min(minDistortion,currDistortion);
 			
-			if(nochange)break;
-		}while(0<--iter && getDistortion(means,labels,universe) > DISTORTION_EPSILON);
-		// cout<<getDistortion(means,labels,universe)<<endl;
-	}
+			if(DEBUG_ON)
+				cout<<"iter "<<iter<<": "<<currDistortion<<" / "<<DISTORTION_EPSILON<<endl;
 
-	for (int i = 0; i < CODEBOOK_SIZE; ++i) {
-		cout<<"i=" <<i <<" ";DEBUGV(means[i]);
+			if(nochange){
+				if(DEBUG_ON)
+					cout<<"No further label change\n";
+				break;
+			}
+		}
+		while(0<--iter && currDistortion > DISTORTION_EPSILON);
 	}
-	cout << " Labels in order: ";
+	cout<<"Final centroids: \n";
+	for (int i = 0; i < CODEBOOK_SIZE; ++i) {
+		cout<<"i=" <<i <<" ";DEBUGV(codebook[i]);
+	}
+	cout << " Labels in order (multiple labels per vowel if K>5): ";
 	DEBUGV(labels);
-	cout<< "Final codebook size: "<<means.size()<<endl;
-	cout <<"Final distortion: "<< getDistortion(means,labels,universe)<<endl;
+	cout<< "Final codebook size: "<<codebook.size()<<endl;
+	cout <<"Final distortion: "<< getDistortion(codebook,labels,universe)<<endl;
+	cout <<"Minimum distortion: "<< minDistortion<<endl;
 	// classify final.
-	return means;
+	return codebook;
 }
 
 
-#define FIXED_FLOAT(x) std::fixed <<std::setprecision(6)<<(x) 
 int main(int argc, char const *argv[]) {
 	ifstream INPUT_FS;
 	INPUT_FS.open("coeffs/universe.txt");
@@ -242,10 +249,9 @@ int main(int argc, char const *argv[]) {
 		cout<<"ERROR: universe not found! xD";
 		return 0;
 	}
-	vector< vector<double> > universe;
-	universe = loadCis(INPUT_FS);	
+	vector< vector<double> > universe = loadCis(INPUT_FS);	
 	INPUT_FS.close();
-	cout<<"U"<<universe.size()<<endl;
+	DEBUG(universe.size())
 	assert(universe.size());
 	// Find the K centroids here-
 	vector<vector<double> > codebook = LBG(CODEBOOK_SIZE, KMEANS_ITERATIONS, universe);	

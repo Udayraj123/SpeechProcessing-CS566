@@ -30,11 +30,6 @@ Output: A/E/I/O/U for each of utterances
 
 */
 
-void writeLines(ofstream &OUTPUT_FS, vector<string> &lines) {
-	for (int i = 0; i < lines.size(); ++i) {
-		OUTPUT_FS << lines[i];
-	}
-}
 void getLines(vector<string>& linesVec_, ifstream& inFile_)
 {
 	string line;
@@ -154,7 +149,7 @@ int main(int argc, char const *argv[]) {
 		string duration = DEFAULT_DURN;
 		filename.str(std::string());
 		filename << CURR_DIR<< DEFAULT_RECORD_FILE;
-		cout << "No/invalid input file provided, Calling recording module\n Duration:  " << duration << "s" << endl;
+		cout << "No/Invalid input file provided, Calling recording module\n Duration:  " << duration << "s" << endl;
 		cout <<" Note: You can speak more than one utterances\n";
 		system(("Recording_Module.exe " + duration + " temp.wav " + filename.str()).c_str());
 		// calling open on an already open stream fails//clear flags too

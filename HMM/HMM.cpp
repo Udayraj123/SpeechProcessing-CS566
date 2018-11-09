@@ -2,6 +2,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <set> // debug fn names list
 #include <algorithm> //reverse and sort
 #include <fstream>
 #include <sstream> // for i in filename
@@ -17,10 +18,13 @@ using namespace std;
 #else
 #define DEBUG_ON false
 #endif
-#define DEBUG(x) if(DEBUG_ON){cout << ">> " << #x << " : \t";cout<<(x)<<endl;}
-#define DEBUGV(x) if(DEBUG_ON){cout << ">> " << #x << " : \t";for(auto i = (x).begin();i!=(x).end();i++)cout<<(*i)<<"\t";cout<<"\n";}
-#define PRINT(x) {cout << #x << " : \t";cout<<(x)<<endl;}
-#define PRINTV(x){cout << #x << " : \t";for(auto i = (x).begin();i!=(x).end();i++)cout<<(*i)<<" ";cout<<"\n";}
+#define FIXED_FLOAT(x) (x)
+// #define FIXED_FLOAT(x) std::fixed <<std::setprecision(6)<<(x) 
+set <string> DEBUG_FNs;
+#define DEBUG(x) if(DEBUG_ON && DEBUG_FNs.count(__FUNCTION__)){cout << ">> " << #x << " : \t";cout<<FIXED_FLOAT(x)<<endl;}
+#define DEBUGV(x) if(DEBUG_ON && DEBUG_FNs.count(__FUNCTION__)){cout << ">> " << #x << " : \t";for(auto _i = (x).begin();_i!=(x).end();_i++)cout<<FIXED_FLOAT(*_i)<<"\t";cout<<"\n";}
+#define PRINT(x) {cout << #x << " : \t";cout<<FIXED_FLOAT(x)<<endl;}
+#define PRINTV(x){cout << #x << " : \t";for(auto _i = (x).begin();_i!=(x).end();_i++)cout<<FIXED_FLOAT(*_i)<<" ";cout<<"\n";}
 #define FOR(i,n)for (ll i = 0; i < (n); ++i)
 #define FORG(i,a,b)for (ll i = (a); i <= (b); ++i)
 #define FORD(i,a,b)for (ll i = (a); i >= (b); --i)
@@ -30,19 +34,22 @@ using namespace std;
 #define vvi vector <vector<int> >
 #define vd vector <double> 
 #define vvd vector <vector<double> >
-int NUM_STATES,SIZE_CODEBOOK,NUM_OBS;
-
+#define vvvd vector <vector<vector<double> > >
+int NUM_STATES,NUM_SYMBOLS,NUM_OBS;
 /*
 	Program to generate Parameters used in Hidden Markov Model
 	Alpha matrix
 	Delta and Psi matrices
 */
+// Note: Everything is 0-indexed
 
-void writeLines(ofstream &OUTPUT_FS, vector<string> &lines) {
-	for (int i = 0; i < lines.size(); ++i) {
-		OUTPUT_FS << lines[i];
-	}
+string trim(string &aString){
+	// https://stackoverflow.com/questions/1798112/removing-leading-and-trailing-spaces-from-a-string
+	auto start = aString.find_first_not_of(' ');
+	auto end = aString.find_last_not_of(' ');
+	return aString.substr(start, (end - start) + 1);
 }
+
 void getLines(vector<string>& linesVec_, ifstream& inFile_)
 {
 	string line;
@@ -65,38 +72,38 @@ vd  loadSeq(string filename){
 	// cout<<filename<<endl;
 	return sequence;
 }
-vvd  loadMatrix(string filename){
+vvd loadMatrix(string filename){
 	vector<string> lines;
 	ifstream INPUT_FS;
 	INPUT_FS.open(filename);
+	if(!INPUT_FS.good()){
+		cerr<<"loadMatrix: File does not exist: "<<filename<<endl;
+		exit(1);
+	}
 	getLines(lines,INPUT_FS);
 	INPUT_FS.close();
 	
 	vvd  matrix;
 	double t;
-	for(auto l : lines){
+	for(auto &l : lines){
 		stringstream ls(l);
 		vd temp;
-		while(!ls.eof()){
-			ls>>t;
+		while(ls>>t)
 			temp.pb(t);
-		}
 		matrix.pb(temp);
 	}
-	// cout<<filename<<endl;
 	return matrix;
 }
 
 
-vvd getAlphas(vvd &A,vvd &B,vd &PI,vd &OBS){
-	vvd Alpha;
-
+vvd getAlpha(vvd &A,vvd &B,vd &PI,vd &OBS){
+	vvd Alpha(NUM_OBS,vd(NUM_STATES));
 	vd row;
 	// Initialization
 	FOR(i,NUM_STATES){
 		row.pb(PI[i]*B[i][OBS[0]]);
 	}
-	Alpha.pb(row);
+	Alpha[0] = row;
 	// Induction Step  O((T-1)*N^2) 
 	FOR(t,NUM_OBS-1){
 		vd newrow;
@@ -108,9 +115,38 @@ vvd getAlphas(vvd &A,vvd &B,vd &PI,vd &OBS){
 			newrow.pb(sum * B[j][OBS[t+1]]);
 		}
 		// inserted at t+1
-		Alpha.pb(newrow);
+		Alpha[t+1] = newrow;
 	}
+	FOR(t,NUM_OBS){
+		DEBUGV(Alpha[t])
+	}
+
 	return Alpha;
+}
+vvd getBeta(vvd &A,vvd &B,vd &OBS){
+	vvd Beta(NUM_OBS,vd(NUM_STATES));
+
+	// Initialization
+	vd row(NUM_STATES,1);
+	Beta[NUM_OBS-1]=row;
+
+	// Induction Step  O((T-1)*N^2) 
+	FORD(t,NUM_OBS-2,0){
+		// Note: Everything is 0-indexed
+		vd newrow;
+		FOR(i,NUM_STATES){
+			double sum=0;
+			FOR(j,NUM_STATES){
+				sum += A[i][j]*Beta[t+1][j]*B[j][OBS[t+1]];
+			}
+			newrow.pb(sum);
+		}
+		Beta[t]=newrow;
+	}
+	FOR(t,NUM_OBS){
+		DEBUGV(Beta[t])
+	}
+	return Beta;
 }
 void getDeltaPsi(vvd &A,vvd &B,vd &PI,vd &OBS,vvd &Delta,vvi &Psi){
 	
@@ -121,9 +157,9 @@ void getDeltaPsi(vvd &A,vvd &B,vd &PI,vd &OBS,vvd &Delta,vvi &Psi){
 		row.pb(PI[i]*B[i][OBS[0]]);
 		psi_row.pb(0);
 	}
-	PRINTV(row)
-	Delta.pb(row);
-	Psi.pb(psi_row);
+	// PRINTV(row)
+	Delta[0] = row;
+	Psi[0] = psi_row;
 	// Induction Step O((T-1)*N^2) 
 	FOR(t,NUM_OBS-1){
 		vd newrow;
@@ -140,60 +176,195 @@ void getDeltaPsi(vvd &A,vvd &B,vd &PI,vd &OBS,vvd &Delta,vvi &Psi){
 			newrow.pb(maxDel * B[j][OBS[t+1]]);
 			newpsi_row.pb(maxI);
 		}
-		PRINTV(newrow)
 		// inserted at t+1
-		Delta.pb(newrow);
-		Psi.pb(newpsi_row);
+		Delta[t+1] = newrow;
+		Psi[t+1] = newpsi_row;
+	}
+	// FOR(t,NUM_OBS){
+	// 	DEBUGV(Delta[t])
+	// }
+	// FOR(t,NUM_OBS){
+	// 	DEBUGV(Psi[t])
+	// }
+}
+vvvd getXImatrix3D(vvd &A,vvd &B,vd &OBS,vvd &Alpha,vvd &Beta){
+	vvvd XImatrix3D(NUM_OBS,vvd(NUM_STATES,vd(NUM_STATES)));
+	double sum;
+	FOR(t,NUM_OBS-1){
+		sum=0;
+		FOR(i, NUM_STATES){
+			FOR(j, NUM_STATES){
+				sum += (XImatrix3D[t][i][j] = Alpha[t][i]*A[i][j]*B[j][OBS[t+1]]*Beta[t+1][j]);
+			}
+		}
+		DEBUG(t)
+		FOR(i,NUM_STATES){
+			FOR(j,NUM_STATES){
+				// XImatrix3D[t][i][j] /= sum;
+				XImatrix3D[t][i][j] = sum ? (XImatrix3D[t][i][j]/sum): 0;
+			}
+			DEBUGV(XImatrix3D[t][i])
+		}
+	}
+	return XImatrix3D;
+}
+
+vvd getGamma(vvvd &XImatrix3D){
+	vvd Gamma(NUM_OBS,vd(NUM_STATES));
+	FOR(t,NUM_OBS-1){
+		FOR(i,NUM_STATES){
+			double sum = 0;
+			FOR(j,NUM_STATES){
+				sum+=XImatrix3D[t][i][j];
+			}
+			Gamma[t][i]=sum;
+		}
+		if(t<5){
+			DEBUG(t)
+			DEBUGV(Gamma[t])
+		}
+	}
+	return Gamma;
+}
+void updateABPI(vvd &A,vvd &B,vd &PI,vd &OBS,vvvd &XImatrix3D,vvd &Gamma){
+	double gSum,sum;
+
+	// Update AB
+	FOR(i,NUM_STATES){
+		gSum=0;
+		vd symSum(NUM_SYMBOLS,0);
+		FOR(t,NUM_OBS-1){
+			// For A
+			gSum+=Gamma[t][i];
+			// For B
+			symSum[OBS[t]] += Gamma[t][i];
+		}
+		// Update A
+		FOR(j,NUM_STATES){
+			sum=0;
+			FOR(t,NUM_OBS-1){
+				sum+=XImatrix3D[t][i][j];
+			}
+			A[i][j]=sum/gSum;
+		}
+		// Update B
+		FOR(k,NUM_SYMBOLS){
+			B[i][k]=symSum[k]/gSum;
+		}
+	}
+	// Update PI
+	FOR(i,NUM_STATES){
+		PI[i]=Gamma[0][i];
 	}
 }
 
 int main(int argc, char const *argv[]) {
-	vvd A = loadMatrix("A.matrix");
-	vvd B = loadMatrix("B.matrix");
-	vd PI = loadSeq("PI.vector");
-	vd OBS = loadSeq("O1.txt");	
+	/** Set visibility of debug messages **/
+	DEBUG_FNs.insert("main");
+	// DEBUG_FNs.insert("getAlpha");
+	// DEBUG_FNs.insert("getBeta");
+	// DEBUG_FNs.insert("getDeltaPsi");
+	// DEBUG_FNs.insert("getXImatrix3D");
+	// DEBUG_FNs.insert("getGamma");
+	// DEBUG_FNs.insert("updateABPI");
 
-	NUM_STATES=B.size();
-	SIZE_CODEBOOK=B[0].size();
+	/** Take Input Data **/
+	vvd A = loadMatrix("A_7fb.matrix");
+	vvd B = loadMatrix("B_7fb.matrix");
+	vd PI = loadSeq("PI_7.vector");
+	vd OBS = loadSeq("O_7.txt");	
+
+	/** Preprocess Input Data **/
 	NUM_OBS = min((int)OBS.size(),OBSERVATIONS_LIM);
+	// delete excess sequence
+	OBS.erase(OBS.begin()+NUM_OBS,OBS.end());
+	NUM_STATES=B.size();	
+	
+	bool ONE_INDEXED=1;
+	for(auto o : OBS) {
+		if(!o)
+			ONE_INDEXED=0;
+	}
+	// DEBUG(ONE_INDEXED)
+	NUM_SYMBOLS=0;	
+	for(auto &o : OBS) {
+		// make it 0-indexed (just like everything else)
+		if(ONE_INDEXED)
+			o--;
+		NUM_SYMBOLS=max((int)o+1,NUM_SYMBOLS);
+	}
+	if(B[0].size() < NUM_SYMBOLS){
+		cerr<<"B matrix doesn't have enough columns! \n";
+		exit(1);
+	}
 
-	cout<<"Initial Observation Sequence: ";
-	FOR(i,NUM_OBS)
-		cout<< OBS[i]<<" ";
-	cout<<endl;
-	// make it 0-indexed
-	for(auto &o : OBS)
-		o--;
+	PRINT(NUM_STATES)
+	PRINT(NUM_OBS)
+	PRINT(NUM_SYMBOLS)
 
-	// Forward Propogation
-	vvd Alpha = getAlphas(A,B,PI,OBS);
+	cout<<"Initial Sequence: ";
+	PRINTV(OBS)
+
+	/** Solution to Problem 1 & 2 **/
+
+	// Forward Procedure
+	vvd Alpha = getAlpha(A,B,PI,OBS);
 	// Termination Step	
 	double P_Obs_Given_Seq = 0;
 	FOR(i,NUM_STATES){
 		P_Obs_Given_Seq += Alpha[NUM_OBS-1][i];
 	}
-	PRINT(P_Obs_Given_Seq);
 	
-	// Viterbi Algorithm -
-	vvd Delta; vvi Psi;
-	getDeltaPsi(A,B,PI,OBS,Delta,Psi);
-	double PStar=0; int QStar=0;
-	FOR(i,NUM_STATES){
-		if(PStar < Delta[NUM_OBS-1][i]){
-			PStar = Delta[NUM_OBS-1][i];
-			QStar = i;
+	// PRINT(P_Obs_Given_Seq);	
+	// Backward Procedure
+	vvd Beta = getBeta(A,B,OBS);
+
+	/** Solution to Problem 3 **/
+
+	double prevPStar, PStar=0; int QStar=0;
+	vvd Delta(NUM_OBS,vd(NUM_STATES)); vvi Psi(NUM_OBS,vi(NUM_STATES));
+	vvvd XImatrix3D;
+	vvd Gamma;
+
+	FOR(iter,NUM_ITERATIONS){		
+		PRINT(iter)
+		if(iter>0){
+			// dont update for first iter
+			XImatrix3D = getXImatrix3D(A,B,OBS,Alpha,Beta);
+			Gamma = getGamma(XImatrix3D);
+			updateABPI(A,B,PI,OBS,XImatrix3D,Gamma);
 		}
+		// FOR(i,NUM_STATES){
+		// 	DEBUGV(A[i])NUM_ITERATIONS
+		// }
+		cout<<endl;
+		// FOR(i,NUM_STATES){
+		// 	DEBUGV(B[i])
+		// }
+		// Viterbi Algorithm -
+		getDeltaPsi(A,B,PI,OBS,Delta,Psi);
+		PStar=QStar=0;
+		FOR(i,NUM_STATES){
+			if(PStar < Delta[NUM_OBS-1][i]){
+				PStar = Delta[NUM_OBS-1][i];
+				QStar = i;
+			}
+		}
+		PRINT(PStar)
+		if(iter>0)PRINT(prevPStar-PStar)
+		prevPStar = PStar;
+		// PRINT(QStar)
+		cout<<endl;
 	}
-	PRINT(PStar)
-	PRINT(QStar)
-	vi stateSeq;
-	stateSeq.pb(QStar);
+
+	vi stateSeq(NUM_OBS);
+	// Make states back to 1 index: 
+	stateSeq[NUM_OBS-1] = (QStar+ !ONE_INDEXED);
 	// Backtracking
 	FORD(t,NUM_OBS-2,0){
 		QStar = Psi[t+1][QStar];
-		stateSeq.pb(QStar);
+		stateSeq[t] = (QStar+ !ONE_INDEXED);
 	}
-	reverse(stateSeq.begin(),stateSeq.end());
-	PRINTV(stateSeq);
+	PRINTV(stateSeq);		
 	return 0;
 }

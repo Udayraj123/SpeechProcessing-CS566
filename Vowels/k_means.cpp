@@ -23,11 +23,6 @@ using namespace std;
 Applying K means on universe file
 */
 
-void writeLines(ofstream &OUTPUT_FS, vector<string> &lines) {
-	for (int i = 0; i < lines.size(); ++i) {
-		OUTPUT_FS << lines[i];
-	}
-}
 void getLines(vector<string>& linesVec_, ifstream& inFile_)
 {
 	string line;

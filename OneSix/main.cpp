@@ -30,11 +30,7 @@ Output: 1 or 6 for each of utterances
 #define M_SILENCE_ENERGY 22500
 #define WINDOW_SIZE 		 3790
 #define DC_SHIFT 		 0
-void writeLines(ofstream &OUTPUT_FS,vector<string> &lines){
-	for (int i = 0; i < lines.size(); ++i) {
-		OUTPUT_FS << lines[i]; 
-	}
-}
+
 void getLines(vector<string>& linesVec_, ifstream& inFile_)
 {
 	string line;
