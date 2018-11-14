@@ -1,1 +1,0 @@
-Each model is trained using its previous model as start model for upto 20 times .

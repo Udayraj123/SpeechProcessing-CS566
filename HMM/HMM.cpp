@@ -269,10 +269,13 @@ int main(int argc, char const *argv[]) {
 	// DEBUG_FNs.insert("updateABPI");
 
 	/** Take Input Data **/
-	vvd A = loadMatrix("A_7fb.matrix");
-	vvd B = loadMatrix("B_7fb.matrix");
-	vd PI = loadSeq("PI_7.vector");
-	vd OBS = loadSeq("O_7.txt");	
+	vd PI = loadSeq("PI.vector");
+	vvd A = loadMatrix("A_3.matrix");
+	vvd B = loadMatrix("B_3.matrix");
+	// vvd A = loadMatrix("A.matrix");
+	// vvd B = loadMatrix("B.matrix");
+	// vd OBS = loadSeq("O_7.txt");	
+	vd OBS = loadSeq("O_3.txt");	
 
 	/** Preprocess Input Data **/
 	NUM_OBS = min((int)OBS.size(),OBSERVATIONS_LIM);
@@ -304,7 +307,8 @@ int main(int argc, char const *argv[]) {
 
 	cout<<"Initial Sequence: ";
 	PRINTV(OBS)
-
+	cout<<endl;
+	
 	/** Solution to Problem 1 & 2 **/
 
 	// Forward Procedure
@@ -334,13 +338,7 @@ int main(int argc, char const *argv[]) {
 			Gamma = getGamma(XImatrix3D);
 			updateABPI(A,B,PI,OBS,XImatrix3D,Gamma);
 		}
-		// FOR(i,NUM_STATES){
-		// 	DEBUGV(A[i])NUM_ITERATIONS
-		// }
-		cout<<endl;
-		// FOR(i,NUM_STATES){
-		// 	DEBUGV(B[i])
-		// }
+
 		// Viterbi Algorithm -
 		getDeltaPsi(A,B,PI,OBS,Delta,Psi);
 		PStar=QStar=0;
@@ -351,20 +349,29 @@ int main(int argc, char const *argv[]) {
 			}
 		}
 		PRINT(PStar)
-		if(iter>0)PRINT(prevPStar-PStar)
+		if(iter>0)PRINT(PStar - prevPStar)
 		prevPStar = PStar;
 		// PRINT(QStar)
 		cout<<endl;
 	}
 
-	vi stateSeq(NUM_OBS);
+	FOR(i,NUM_STATES){
+		DEBUGV(A[i])
+	}
+	cout<<endl;
+	FOR(i,NUM_STATES){
+		DEBUGV(B[i])
+	}
+	cout<<endl;
+
+	vi FinalStateSeq(NUM_OBS);
 	// Make states back to 1 index: 
-	stateSeq[NUM_OBS-1] = (QStar+ !ONE_INDEXED);
+	FinalStateSeq[NUM_OBS-1] = (QStar+ !ONE_INDEXED);
 	// Backtracking
 	FORD(t,NUM_OBS-2,0){
 		QStar = Psi[t+1][QStar];
-		stateSeq[t] = (QStar+ !ONE_INDEXED);
+		FinalStateSeq[t] = (QStar+ !ONE_INDEXED);
 	}
-	PRINTV(stateSeq);		
+	PRINTV(FinalStateSeq);		
 	return 0;
 }

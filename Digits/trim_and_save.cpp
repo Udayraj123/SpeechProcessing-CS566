@@ -74,7 +74,6 @@ int main(int argc, char const *argv[]) {
 		INPUT_FS.close();
 
 		if (!lines.size()) {
-			// record instead 
 			cout << "ERROR: Empty data! Please check if correct filename is provided and try again.\n";
 			return 1;
 		}
